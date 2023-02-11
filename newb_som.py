@@ -10,6 +10,8 @@ Created on Thu Feb  9 10:27:23 2023
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+#import cv2
+import os
 
 
 
@@ -291,6 +293,9 @@ class newb_som:
         self._distance_function = Distance.get_distance_function(self.distance)
         self._neighborhood_function = \
                 Neighborhood.get_neighborhood_function(self.neighborhood)
+                
+        # create array connecting adjacent nodes
+        #self._node_lines = self._make_vertex_array()
         
         
         
@@ -509,7 +514,118 @@ class newb_som:
     
     
     
-    def train(self, data, plot_every=None, xy=None):
+    def project_nodes(self, ax, xy_inds):
+        """
+        Project nodes onto the feature space of data given by the
+        column indices xy
+        
+        Parameters
+        ----------
+        ax: Matplotlib axis instance
+            axis to plot data onto
+        xy: 2-element list / arr of integers
+            The column indices of data we're project onto
+            
+        Returns
+        -------
+        None
+        """
+        
+        node_proj_posits = self._weights[:,:,xy_inds].reshape(
+                                            np.prod(self.som_shape),
+                                            2
+                                                             )
+        
+        ## numpy is very ... annoying in trying to convert 2d inds
+        ## to flattened 1d inds (multi_ravel_index won't do it),
+        ## so next best best is to take x and y posits, reshape them
+        ## based on node coords, take their transpose, and use that
+        ## instead ...
+        x = node_proj_posits[:,0].reshape( self.som_shape ).T
+        y = node_proj_posits[:,1].reshape( self.som_shape ).T
+        
+        # get dict showing starting and ending location of
+        # lines b/w adjacent nodes
+        node_dict = self._make_node_graph()
+        
+        x_posit, y_posit = [], []
+        for starting_node in node_dict:
+            for ending_node in node_dict[starting_node]:
+                x_posit.append( ( x[starting_node], x[ending_node] ) )
+                y_posit.append( ( y[starting_node], y[ending_node] ) )
+        
+        
+        ## finally make plot of nodes ...
+        ax.scatter(*node_proj_posits.T,
+                    s=100,
+                    marker='o',
+                    facecolors='None',
+                    edgecolors='black')
+        # and node-adjacent lines
+        ax.plot(np.vstack(x_posit).T,
+                np.vstack(y_posit).T,
+                'black',
+                linewidth=0.5)
+        
+    
+    
+    
+    
+    def _make_node_graph(self, xy_array=None):
+        """
+        Makes list of tuples indicating which nodes are connected adjacently.
+        
+        Note: Matplotlib plot() function will connect lines between all
+              consecutive points in a given array; to only plot the lines
+              given (with no extra lines between consecutive points), the
+              x, y arrays need to be given as 2 x N arrays (so the transpose
+              of what's returned here!)
+        """
+        
+        if xy_array is None:
+            xy_array = False
+        
+        ## Make dict with keys being node coordinates and values being
+        ## list of (rectangular) adjacent nodes
+        line_dict = {}
+        for node in self._nodes_xy:
+            tuple_node = tuple(node.tolist())
+            line_dict[tuple_node] = []
+            # in rectangular, node (x,y) could only be adjacent to node
+            # that +/- 1 components to it x or y value
+            possible_nodes = [
+                ( tuple_node[0]-1, tuple_node[1] ),
+                ( tuple_node[0], tuple_node[1]-1 ),
+                ( tuple_node[0]+1, tuple_node[1] ),
+                ( tuple_node[0], tuple_node[1]+1 )
+                              ]
+            # eliminate possible nodes that go beyond bounds
+            for possible_node in possible_nodes:
+                if ((min(possible_node) < 0) 
+                       or (possible_node[0] == self.som_shape[0]) 
+                       or (possible_node[1] == self.som_shape[1])):
+                    continue
+                line_dict[tuple_node].append( possible_node )
+        
+        
+        if not xy_array:
+            return line_dict
+        
+        ## If array is desired, convert from node dict to array
+        x, y = [], []
+        for starting_pt in line_dict:
+            for ending_pt in line_dict[starting_pt]:
+                x.append( (starting_pt[0], ending_pt[0]) )
+                y.append( (starting_pt[1], ending_pt[1]) )
+    
+                
+        return np.vstack(x), np.vstack(y)
+        
+        
+        
+    
+    
+    def train(self, data, plot_every=None, xy=None, save_movie=None):
         """
         Batch-trains SOM using data
         No data shuffling
@@ -525,6 +641,9 @@ class newb_som:
             List of strs (if pandas dataframe) or ints (if raw numpy array)
             representing column indices of data to plot. SOM nodes will
             be plotted on top using their weight vectors as "positions"
+        save_movie: str, optional
+            If given folder address as str, will save movie of plots made
+            at address
 
         Returns
         -------
@@ -567,13 +686,36 @@ class newb_som:
             # check if plotting
             if (plot_every is not None) and (t % plot_every == 0):
                 
+                fig, ax = plt.subplots(1,1)
+                
                 # plot data
                 if _is_df:
-                    plt.scatter( *data[xy].values.T, s=1 )
+                    ax.scatter( *data[xy].values.T, s=1 )
+                    x_data = data[xy].values[:,0]
+                    y_data = data[xy].values[:,1]
                 else:
-                    plt.scatter( *data[:,xy].T )
+                    ax.scatter( *data[:,xy].T )
+                    x_data = data[:,xy[0]]
+                    y_data = data[:,xy[1]]
                 
-                # plot nodes on data
+                # sometimes nodes get pushed faaaar away, so need to constrain
+                # window view to data
+                x_bounds = [x_data.min(),x_data.max()]
+                delta_x = np.diff(x_bounds) * 0.05
+                x_bounds = [x_bounds[0] - delta_x, x_bounds[1] + delta_x]
+                ax.set_xlim(x_bounds)
+                y_bounds = [y_data.min(),y_data.max()]
+                delta_y = np.diff(y_bounds) * 0.05
+                y_bounds = [y_bounds[0] - delta_y, y_bounds[1] + delta_y]
+                ax.set_ylim(y_bounds)
+                
+                    
+                self.project_nodes(ax, xy_inds)
+                ax.set_title('Iteration '+str(t+1)+' out of '+str(self.max_iter))
+                plt.show()
+                plt.close()
+                
+                """# plot nodes on data
                 node_posits = self._weights[:,:,xy_inds].reshape(
                                                     np.prod(self.som_shape),
                                                     2
@@ -585,7 +727,7 @@ class newb_som:
                             edgecolors='black')
                 plt.title('Iteration '+str(t)+' out of '+str(self.max_iter))
                 plt.show()
-                plt.close()
+                plt.close()"""
                     
                 
             
