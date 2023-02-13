@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 #import cv2
 import os
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Circle
 
 
 
@@ -553,7 +555,7 @@ class newb_som:
     
     
     
-    def project_nodes(self, ax, xy_inds):
+    def project_nodes(self, ax, xy_inds, sigma_t, show_neighborhood=None):
         """
         Project nodes onto the feature space of data given by the
         column indices xy
@@ -569,6 +571,8 @@ class newb_som:
         -------
         None
         """
+        if show_neighborhood is None:
+            show_neighborhood = False
         
         node_proj_posits = self._weights[:,:,xy_inds].reshape(
                                             np.prod(self.som_shape),
@@ -605,6 +609,29 @@ class newb_som:
                 np.vstack(y_posit).T,
                 'black',
                 linewidth=0.5)
+        
+        
+        ## and if specified, draw neighborhood regions
+        if show_neighborhood:
+            
+            # IF Gaussian, neighborhood *technically* spans all space,
+            # but we're using isotropic 2d gaussians so we'll just plot
+            # the 95% confidence circle (circle since isotropic!)
+            # 95% of chi square of degree 2 --> (x/sig_x)**2 + (y/sig_y)**2 = 5.991
+            # taking x=y and sig_x = sig_y = sigma_t --> radius = sqrt(5.991/2)*sigma_t
+            if self.neighborhood == _GAUSSIAN:
+                radius = np.sqrt(5.991/2) * sigma_t
+                # create list of individual circle objects with
+                # center on nodes
+                neigh_patches = []
+                for coord in node_proj_posits:
+                    neigh_patches.append( 
+                        Circle(coord, radius=radius, color='green', fill=True,
+                               alpha=0.3)
+                                        )
+                # turn list into patch collection and plot
+                patch_coll = PatchCollection(neigh_patches, match_original=True)
+                ax.add_collection(patch_coll)
         
     
     
@@ -758,7 +785,8 @@ class newb_som:
                 data_ax.set_title('data')
                 
                     
-                self.project_nodes(data_ax, xy_inds)
+                self.project_nodes(data_ax, xy_inds, sigma_t,
+                                   show_neighborhood=True)
                 #data_ax.set_title('Iteration '+str(t+1)+' out of '+str(self.max_iter))
                 
                 

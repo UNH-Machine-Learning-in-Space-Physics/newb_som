@@ -159,12 +159,12 @@ if __name__ == "__main__":
     
     
     ## som params
-    som_shape = (5,5)
+    som_shape = (3,3)
     max_iter = 25
-    sigma_start = 0.1
-    sigma_end = 0.01
-    learning_rate_start = 0.1
-    learning_rate_end = 0.01
+    sigma_start = 1.0
+    sigma_end = 0.1
+    learning_rate_start = 0.01
+    learning_rate_end = 0.001
     decay_type = 'exponential'
     data_fit = None
     
