@@ -290,7 +290,7 @@ class newb_som:
                        decay                 = None,
                        topology              = None,
                        distance              = None,
-                       random_seed           = None):
+                       seed                  = None):
         
         # class params determined at instantiation
         self.som_shape = som_shape
@@ -304,7 +304,7 @@ class newb_som:
         self.neighborhood = neighborhood
         self.decay = decay
         self.topology = topology
-        self.random_seed = random_seed
+        self.seed = seed
         self.distance = distance
         
         # init values and check if user gave ones
@@ -318,7 +318,7 @@ class newb_som:
         self._nodes_xy = np.vstack([
                             np.meshgrid(self._x, self._y)
                                    ]).reshape(2,nx*ny).T
-        self._random_generator = np.random.RandomState(self.random_seed)
+        self._random_generator = np.random.RandomState(self.seed)
         self._weights = None
         """
         self._weights = \
@@ -450,8 +450,8 @@ class newb_som:
             
         ## Determine random seed
         # keep random seed as None
-        if self.random_seed is not None:
-            if not newb_som._is_int_type(self.random_seed):
+        if self.seed is not None:
+            if not newb_som._is_int_type(self.seed):
                 raise ValueError("When providing random_seed, it must be int")
                 
         

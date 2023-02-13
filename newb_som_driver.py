@@ -161,7 +161,7 @@ if __name__ == "__main__":
     ## som params
     som_shape = (5,5)
     max_iter = 25
-    sigma_start = 0.4
+    sigma_start = 0.8
     sigma_end = 0.1
     learning_rate_start = 0.01
     learning_rate_end = 0.001
@@ -176,7 +176,8 @@ if __name__ == "__main__":
                    learning_rate_end = learning_rate_end,
                    sigma_start = sigma_start,
                    sigma_end = sigma_end,
-                   decay = decay_type)
+                   decay = decay_type,
+                   seed = rng_seed)
     
     model_data = prep_data(dat, fit=data_fit)
     som.train(model_data, plot_every=1, weight_init='linspace')
