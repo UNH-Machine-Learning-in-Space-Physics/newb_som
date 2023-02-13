@@ -68,6 +68,25 @@ def make_mv_gauss(num_gauss    = None,
 
 
 
+def make_unif_data(n=None, dim_bounds=None, seed=None):
+    if n is None: n = 30
+    if dim_bounds is None: dim_bounds = [ [0,1], [0,1] ]
+    
+    rng = np.random.RandomState(seed)
+    
+    data = np.vstack( [ rng.random(n) for i in range(len(dim_bounds)) ] ).T
+    
+    for i in range(len(dim_bounds)):
+        _min, _max = dim_bounds[i]
+        data[:,i] = _min + (_max - _min) * data[:,i]
+        
+    return data
+    
+    
+
+
+
+
 
 
 
@@ -94,6 +113,10 @@ def prep_data(data, fit=None):
 if __name__ == "__main__":
     
     
+    ### TO dO
+    ### Later, try make_moons sklearn dataset
+    
+    
     ## params for data generation
     rng_seed = 1
     means = [ np.array([0,0]),
@@ -105,13 +128,26 @@ if __name__ == "__main__":
                 np.array([[1,corr],[corr,1]]) * scale,
                 np.array([[1,-corr],[-corr,1]]) * scale ]
     
-    ## make data
+    ## make gaussian data
     dat, g_src = make_mv_gauss(num_gauss=3,
                                means=means,
                                covmats = covmats,
-                               n_per_gauss=80,
+                               n_per_gauss=200,
                                seed=rng_seed,
                                single_array=True)
+    
+    ## make uniform data
+    mins = dat.min(axis=0)
+    maxs = dat.max(axis=0)
+    bounds = [ (mins[i],maxs[i]) for i in range(dat.shape[1]) ]
+    unif_dat = make_unif_data(n=int(dat.shape[0]/2),
+                              dim_bounds=bounds,
+                              seed=rng_seed)
+    unif_src = np.full(unif_dat.shape[0], max(g_src)+1)
+    
+    ## combine
+    dat = np.vstack( [dat, unif_dat] )
+    src = np.hstack( [g_src, unif_src] )
     
     ## showcase
     plt.scatter(dat[:,0], dat[:,1], s=2)
@@ -124,19 +160,25 @@ if __name__ == "__main__":
     
     ## som params
     som_shape = (5,5)
-    max_iter = 50
-    sigma_start = 1
-    sigma_end = 0.1
+    max_iter = 25
+    sigma_start = 0.1
+    sigma_end = 0.01
+    learning_rate_start = 0.1
+    learning_rate_end = 0.01
+    decay_type = 'exponential'
+    data_fit = None
     
     ## instantiate som
     som = newb_som(som_shape = som_shape,
                    max_iter = max_iter,
                    data_size = len(dat[0]),
-                   learning_rate_start=0.1,
+                   learning_rate_start = learning_rate_start,
+                   learning_rate_end = learning_rate_end,
                    sigma_start = sigma_start,
-                   sigma_end = sigma_end)
+                   sigma_end = sigma_end,
+                   decay = decay_type)
     
-    model_data = prep_data(dat, fit='normalize')
+    model_data = prep_data(dat, fit=data_fit)
     som.train(model_data, plot_every=1)
 
 

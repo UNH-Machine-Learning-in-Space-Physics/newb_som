@@ -25,7 +25,8 @@ _GAUSSIAN = 'gaussian'
 _ALLOWED_NEIGHBORHOOD = [ _GAUSSIAN ]
 
 _LINEAR = 'linear'
-_ALLOWED_DECAY = [ _LINEAR ]
+_EXPONENTIAL = 'exponential'
+_ALLOWED_DECAY = [ _LINEAR, _EXPONENTIAL ]
 
 _EUCLIDEAN = 'euclidean'
 _ALLOWED_METRIC = [ _EUCLIDEAN ]
@@ -189,7 +190,40 @@ class Decay:
         slope = (end_val - start_val) / max_iter   # always negative!
         intercept = start_val
         return slope * current_iter + intercept
+    
+    
+    
+    
+    
+    def _get_exponential_decay(start_val, end_val, current_iter, max_iter):
+        """
+        Exponential decay function, of form ...
+        val(t) = val_0 * exp( -current_iter * c )
+        (where c is a constant determined by stipulating the starting and
+         ending values)
         
+        Parameters
+        ----------
+        start_val : number
+            Starting value.
+        end_val : number
+            Ending value.
+        current_iter : int
+            Current iteration integer.
+        max_iter : int
+            Max iteration allowed.
+
+        Returns
+        -------
+        number
+            value at iteration current_iter
+        """
+        
+        if end_val == 0:
+            c = -np.log(0.01) / max_iter
+        else:
+            c = -np.log(end_val / start_val) / max_iter
+        return start_val * np.exp(-current_iter * c)
     
     
         
@@ -201,6 +235,8 @@ class Decay:
         func = None
         if decay_type == _LINEAR:
             func = Decay._get_linear_decay
+        if decay_type == _EXPONENTIAL:
+            func = Decay._get_exponential_decay
             
         else:
             raise ValueError('Decay function \'' + decay_type
@@ -281,12 +317,15 @@ class newb_som:
                             np.meshgrid(self._x, self._y)
                                    ]).reshape(2,nx*ny).T
         self._random_generator = np.random.RandomState(self.random_seed)
+        """
         self._weights = \
             self._random_generator.normal(
-                    loc   = 0,
+                    loc   = 0.5,
                     scale = 0.1,
                     size  = nx*ny*self.data_size
                                          ).reshape( (nx,ny,self.data_size) )
+        """
+        self._weights = self._random_generator.rand(nx, ny, self.data_size)
             
         # prepare functions needed based on params
         self._decay_function = Decay.get_decay_function(self.decay)
@@ -671,6 +710,8 @@ class newb_som:
         data_arr = data.values if _is_df else data
         
         
+        sigma_vals = []
+        alpha_vals = []
         for t in range(self.max_iter):
             
             # Update neighborhood size and learning rate for current iteration
@@ -678,23 +719,29 @@ class newb_som:
                                            self.sigma_end,
                                            t,
                                            self.max_iter)
+            sigma_vals.append( sigma_t )
             alpha_t = self._decay_function(self.learning_rate_start,
                                            self.learning_rate_end,
                                            t,
                                            self.max_iter)
+            alpha_vals.append( alpha_t )
             
             # check if plotting
             if (plot_every is not None) and (t % plot_every == 0):
                 
-                fig, ax = plt.subplots(1,1)
+                fig, axes = plt.subplots(2,2)
+                data_ax = axes[0,0]
+                decay_ax = axes[1,0]
+                neigh_ax = axes[0,1]
+                
                 
                 # plot data
                 if _is_df:
-                    ax.scatter( *data[xy].values.T, s=1 )
+                    data_ax.scatter( *data[xy].values.T, s=1 )
                     x_data = data[xy].values[:,0]
                     y_data = data[xy].values[:,1]
                 else:
-                    ax.scatter( *data[:,xy].T )
+                    data_ax.scatter( *data[:,xy].T, s=1 )
                     x_data = data[:,xy[0]]
                     y_data = data[:,xy[1]]
                 
@@ -703,15 +750,45 @@ class newb_som:
                 x_bounds = [x_data.min(),x_data.max()]
                 delta_x = np.diff(x_bounds) * 0.05
                 x_bounds = [x_bounds[0] - delta_x, x_bounds[1] + delta_x]
-                ax.set_xlim(x_bounds)
+                data_ax.set_xlim(x_bounds)
                 y_bounds = [y_data.min(),y_data.max()]
                 delta_y = np.diff(y_bounds) * 0.05
                 y_bounds = [y_bounds[0] - delta_y, y_bounds[1] + delta_y]
-                ax.set_ylim(y_bounds)
+                data_ax.set_ylim(y_bounds)
+                data_ax.set_title('data')
                 
                     
-                self.project_nodes(ax, xy_inds)
-                ax.set_title('Iteration '+str(t+1)+' out of '+str(self.max_iter))
+                self.project_nodes(data_ax, xy_inds)
+                #data_ax.set_title('Iteration '+str(t+1)+' out of '+str(self.max_iter))
+                
+                
+                # plot sigma and learning rate
+                decay_ax.plot(np.arange(t+1),sigma_vals,lw=5)
+                decay_ax.set_ylim( [ self.sigma_end, self.sigma_start ] )
+                decay_ax.set_xlim( [ 0, self.max_iter ] )
+                decay_ax.set_title('sigma(t)')
+                
+                
+                # plot neigh func
+                xdata_neigh = np.linspace(-2,2)
+                neigh_ax.plot(xdata_neigh,
+                              self._neighborhood_function(xdata_neigh,
+                                                          self.sigma_start),
+                              lw=3,
+                              linestyle='dashed')
+                neigh_ax.plot(xdata_neigh,
+                              self._neighborhood_function(xdata_neigh,
+                                                          sigma_t),
+                              lw=3,
+                              linestyle='solid')
+                neigh_ax.set_title('Neighborhood function ')
+                
+                
+                # set title
+                fig.suptitle('Iteration '+str(t+1)+' out of '+str(self.max_iter))
+                plt.subplots_adjust(hspace=0.35)
+                
+                
                 plt.show()
                 plt.close()
                 
@@ -742,6 +819,9 @@ class newb_som:
                 bmu = self.get_BMU(data_vec)
                 neighborhood_vals = self.compute_neighborhood(bmu,
                                                               sigma_t)
+                #print(neighborhood_vals)
+                #if q == 5:
+                #    raise ValueError
                 #print(bmu, neighborhood_vals)
                 # compute weight change *due only to current data vector!*
                 new_weights = new_weights + \
@@ -753,6 +833,9 @@ class newb_som:
             
             # once all data has been processed for this iteration,
             # update weights
+            print(t,"\n",new_weights)
+            #if t == 5:
+            #    raise ValueError
             self._weights = self._weights + new_weights
             
     
