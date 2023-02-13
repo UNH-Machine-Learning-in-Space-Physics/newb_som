@@ -132,7 +132,7 @@ if __name__ == "__main__":
     dat, g_src = make_mv_gauss(num_gauss=3,
                                means=means,
                                covmats = covmats,
-                               n_per_gauss=200,
+                               n_per_gauss=500,
                                seed=rng_seed,
                                single_array=True)
     
@@ -159,9 +159,9 @@ if __name__ == "__main__":
     
     
     ## som params
-    som_shape = (3,3)
+    som_shape = (5,5)
     max_iter = 25
-    sigma_start = 1.0
+    sigma_start = 0.4
     sigma_end = 0.1
     learning_rate_start = 0.01
     learning_rate_end = 0.001
@@ -179,7 +179,7 @@ if __name__ == "__main__":
                    decay = decay_type)
     
     model_data = prep_data(dat, fit=data_fit)
-    som.train(model_data, plot_every=1)
+    som.train(model_data, plot_every=1, weight_init='linspace')
 
 
 

@@ -319,6 +319,7 @@ class newb_som:
                             np.meshgrid(self._x, self._y)
                                    ]).reshape(2,nx*ny).T
         self._random_generator = np.random.RandomState(self.random_seed)
+        self._weights = None
         """
         self._weights = \
             self._random_generator.normal(
@@ -327,7 +328,7 @@ class newb_som:
                     size  = nx*ny*self.data_size
                                          ).reshape( (nx,ny,self.data_size) )
         """
-        self._weights = self._random_generator.rand(nx, ny, self.data_size)
+        #self._weights = self._random_generator.rand(nx, ny, self.data_size)
             
         # prepare functions needed based on params
         self._decay_function = Decay.get_decay_function(self.decay)
@@ -478,6 +479,16 @@ class newb_som:
     
     
     
+    def _is_pandas_df_type(container):
+        """
+        Returns true if container is a pandas dataframe - false otherwise
+        """
+        return isinstance(container, pd.core.frame.DataFrame)
+    
+    
+    
+    
+    
     def _is_number_type(val):
         """
         Returns true if val is of number type - val should be NUMBER and
@@ -526,23 +537,124 @@ class newb_som:
         -------
         None
         """
-        # first need to broadcost (e.g. expand dimensionality) of
+        ## Depending on if there are a 1d or 2d array of nodes, need to
+        ## broadcast differently
+        neighborhood_vals_3d = None
+        nx = self.som_shape[0]
+        ny = self.som_shape[1]
+        if (nx == 1):
+            neighborhood_vals_3d = neighborhood_vals.reshape(ny,1)[None,:,:]
+        elif (ny == 1):
+            neighborhood_vals_3d = neighborhood_vals.reshape(nx,1)[:,None,:]
+        # first need to broadcast (e.g. expand dimensionality) of
         # neighborhood values; each weight vector receives a particular
         # scalar neighborhood value, so expand along last axis of
         # the latter to make it 3d-compliant
-        neighborhood_vals_3d = neighborhood_vals[:,:,None]  ##
+        else:
+            neighborhood_vals_3d = neighborhood_vals[:,:,None]
+
         # can now matrix multiply correctly
         weight_updates = (alpha_t
                             * neighborhood_vals_3d
                             * (data_vec - self._weights))
         return weight_updates
-        # then update
-        #self._weights = self._weights + weight_updates
+    
+    
+    
+    
+    
+    def init_weights(self, init_type=None, data=None, som_shape=None):
+        """
+        Prepare weights according to initialization type
+        
+        Parameters
+        ----------
+        init_type: str (optional, default None)
+            Used to specify which initialization method is used
+        data: dataframe or 2d numpy array (optional, default None)
+            Data used to help initialize weights
+        som_shape: 2-element tuple of integers (optional, default None)
+            Shape of SOM; if None and is instantiated, will use class shape.
+            WILL raise ValueError if not instantiated and not given
+        
+        Returns
+        -------
+        3d numpy array of weights
+            First axis is x-nodes, second is y-nodes, last axis are weights
+        """
+        
+        if som_shape is None:
+            if self.som_shape is None:
+                raise ValueError('Have to specify som_shape or '
+                                 + " instantiate class")
+            else:
+                som_shape = self.som_shape
+        
+        
+        if init_type is None:
+            init_type = 'random_uniform'
+            
+        data_bounds = None
+        if data is None:
+            data_bounds = [ [0,1] for i in range(self.data_size) ]
+        elif newb_som._is_pandas_df_type(data):
+            data_bounds = np.array( [data.min(), data.max()] ).T
+        else: # data is np array
+            data_bounds = np.array( [data.min(axis=0), data.max(axis=0)] ).T
+            
+            
+        if init_type == 'random_uniform':
+            weights = []
+            for i in range(self.data_size):
+                _min, _max = data_bounds[i]
+                nodes_per_weight_column = np.prod( som_shape )
+                weights.append( 
+                    _min + (_max - _min) * \
+                            self._random_generator.\
+                                rand( nodes_per_weight_column ).\
+                                    reshape( som_shape )
+                              )
+            #weights = np.vstack(weights)#.reshape( *self.som_shape, len(data_bounds),
+            #                           #         order='F')
+                                        
+            #weights.T[:,i]
+            # frustratingly, I can't just call np.reshape b/c it will mix the
+            # columns up; im sure there is a correct way to use it but I can't
+            # figure it out, so here's a pythonic way of doing it...
+            # Combine the columns-worth of each som_shape-array in weights,
+            # transpose them, and covert into a 3d array
+            weights = np.array(
+                    [ np.vstack( [ weights[0][i], weights[1][i] ] ).T \
+                      for i in range(weights[0].shape[0]) ]
+                              )
+                
+        
+        if init_type == 'linspace':
+            
+            if self.data_size != 2:
+                raise ValueError('Linspace only supported for 2d data for now!')
+            
+            weights = []
+            for i in range(self.data_size):
+                _min, _max = data_bounds[i]
+                nodes_per_weight_column = np.prod( som_shape )
+                weights.append( 
+                    np.linspace(_min, _max, som_shape[i])
+                              )
+            
+            x,y = np.meshgrid( *weights )
+            weights = np.vstack( [x.reshape(x.size), y.reshape(y.size)] ).T.\
+                    reshape( *som_shape, self.data_size )
+            
+            
+            
+            
+        return weights        
+
         
         
     
-  
-        
+          
     def pca_weight_init(self):
         """
         Initialize weights using first two dominant eigenvectors
@@ -586,6 +698,11 @@ class newb_som:
         ## instead ...
         x = node_proj_posits[:,0].reshape( self.som_shape ).T
         y = node_proj_posits[:,1].reshape( self.som_shape ).T
+        ## ... and if som_shape is 1d (in form of either (1,N) or (N,1)),
+        ## then need to transpose x/y data
+        if (self.som_shape[0] == 1) or (self.som_shape[1] == 1):
+            x = x.T
+            y = y.T
         
         # get dict showing starting and ending location of
         # lines b/w adjacent nodes
@@ -691,7 +808,8 @@ class newb_som:
         
     
     
-    def train(self, data, plot_every=None, xy=None, save_movie=None):
+    def train(self, data, plot_every=None, xy=None, save_movie=None,
+              weight_init=None):
         """
         Batch-trains SOM using data
         No data shuffling
@@ -715,6 +833,19 @@ class newb_som:
         -------
         None.
         """
+        
+        ## First, prepare weights if they haven't been initialized
+        if weight_init is None:
+            weight_init = 'random_uniform'
+            
+        self._weights = self.init_weights(init_type=weight_init, data=data)
+        
+        # check this here b/c want general weight type to be returned
+        # from init_weights
+        if data.shape[1] != self.data_size:
+            raise ValueError("Number of features of data ("+str(data.shape[1])
+                             +") does not match data_size given in constructor")
+        
         
         _is_df = isinstance(data, pd.core.frame.DataFrame)
         
