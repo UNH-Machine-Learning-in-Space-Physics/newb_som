@@ -21,6 +21,7 @@ from matplotlib.patches import Circle
 
 
 _RECTANGULAR = 'rectangular'
+_HEXAGONAL = 'hexagonal'
 _ALLOWED_TOPOLOGY = [ _RECTANGULAR ]
 
 _GAUSSIAN = 'gaussian'
@@ -314,6 +315,7 @@ class newb_som:
         nx, ny = self.som_shape
         self._x = np.arange(nx)
         self._y = np.arange(ny)
+        self._xx, self._yy = np.meshgrid( self._x, self._y )
         # node 2d coords saved as nx*ny rows x 2 columns
         self._nodes_xy = np.vstack([
                             np.meshgrid(self._x, self._y)
@@ -507,11 +509,51 @@ class newb_som:
         val should be variable and not TYPE!
         """
         return isinstance(val, (np.str_,str))
-  
+    
+    
+    
+    
+    
+    def _check_if_legal_node(self, node_ind, raise_error=None):
+        """
+        Checks if node_ind is illegal.
+        
+        Parameters
+        ----------
+        node_ind: 2-element integer tuple / list / 1d numpy array
+            Indices of a potential SOM node
+        raise_error: bool (default=False)
+            If False, will return bool indicating is given node_ind is
+            legal or not
+            If True, will raise ValueError if given node_ind is not legal
+            
+        Returns
+        -------
+        bool
+            True if node is legal, False otherwise
+            (Unless raise_error is True, which will halt program!)
+        """
+        ## Confirm that node_ind is legal
+        if (min(node_ind) < 0):
+            if raise_error:
+                raise ValueError('Nodes cannot have negative integers')
+            else:
+                return False
+        if (node_ind[0] >= self.som_shape[0]) \
+                or (node_ind[1] >= self.som_shape[1]):
+            if raise_error:
+                raise ValueError('Node indices cannot exceed number of nodes '
+                                 + 'along x/y dimension')
+            else:
+                return False
+        
+        ## If got here, return True
+        return True
     
   
     
   
+    
     def _compute_weight_change_from_data_i(self, alpha_t,
                                                  neighborhood_vals,
                                                  data_vec):
@@ -667,6 +709,173 @@ class newb_som:
     
     
     
+    def get_adjacent_nodes(self, node_ind):
+        """
+        Returns numpy array of nodes that are adjacent to node_ind
+
+        Parameters
+        ----------
+        node_ind : 2-element tuple / array of integers
+            Indices of node in SOM
+
+        Returns
+        -------
+        2d numpy of indices
+            4 elements if rectangular, 6 is hexagonal
+        
+        """
+        ## Confirm that node_ind is legal
+        self._check_if_legal_node(node_ind, raise_error=True)
+        
+        ## Get list of allowed nodes based on topology
+        possible_nodes = None
+        # Rectangular has 4
+        if self.topology == _RECTANGULAR:
+            possible_nodes = [
+                        [node_ind[0]+1, node_ind[1]],
+                        [node_ind[0]-1, node_ind[1]],
+                        [node_ind[0], node_ind[1]+1],
+                        [node_ind[0], node_ind[1]-1]
+                             ]
+        # Hexagonal (when implemented) has 6
+        elif self.topology == _HEXAGONAL:
+            raise ValueError('Hexagonal not implemented yet')
+        # If neither, then raise error
+        else:
+            raise ValueError('Topology given not recognized')
+        
+        ## Iterate over list of nodes and save only what are legal node indices
+        adjacent_nodes = []
+        for possible_node in possible_nodes:
+            if not self._check_if_legal_node(possible_node):
+                continue
+            adjacent_nodes.append( possible_node )
+        
+        return np.array( adjacent_nodes )
+    
+    
+    
+    
+    
+    def distance_map(self, as_array=None):
+        """
+        Adds the distances between adjacent nodes and returns this as a dict.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        dict (keys=node indices, values=sum of adjacent distances)
+        """
+        if as_array is None:
+            as_array = False
+        
+        
+        distances = {}
+        for x_i in range(self._xx.shape[0]):
+            for y_i in range(self._xx.shape[1]):
+                # Get central node to compare adjacent distances to
+                node_ind = (self._xx[x_i,y_i], self._yy[x_i,y_i])
+                # (convert node-tuple to 1d numpy arr)
+                node_ind_arr = np.array( node_ind )
+                
+                # Get adjacent nodes of node-ind
+                adjacent_nodes = self.get_adjacent_nodes( node_ind )
+                
+                # compute distances between central node and adjancent ones
+                adjacent_distances = self._distance_function( 
+                                self.get_node_weights( node_ind_arr ),
+                                self.get_node_weights( adjacent_nodes )
+                                                            )
+                
+                # Assign sum of distances to dict with central node as key
+                #distances[node_ind] = np.sum(adjacent_distances)
+                distances[node_ind] = np.mean(adjacent_distances)
+        
+        ## If array is desired, convert from dict to array where distances[i,j]
+        ## is the summed distance of node (i,j)
+        if as_array:
+            distances_arr = np.zeros( self.som_shape )
+            for key in distances:
+                distances_arr[ key ] = distances[key]
+            distances = distances_arr
+        
+        return distances
+    
+    
+    
+    
+    
+    def full_quantization_error(self, data):
+        """
+        Returns the *full* quantization error over all of data
+        
+        Quantization Error is the average distance between data and the
+        BMU. This returns the full 1d array of all differences between the
+        data and each data's BMU.
+        
+        Parameters
+        ----------
+        data: 2d numpy array or pandas DataFrame
+            data to train the SOM; must be at least 2-dimensional
+        
+        Returns
+        -------
+        1d numpy array
+        """
+        
+        differences = []
+        for row in data:
+            node_ind = self.get_BMU(row)
+            distance = self._distance_function(
+                            np.ravel( self.get_node_weights(node_ind) ),
+                            row
+                                              )
+            differences.append( distance )
+        return np.array( differences )
+        
+        
+                
+                
+        
+    def get_node_weights(self, nodes, weight_inds=None):
+        """
+        Retrieves the weight components (given by weight_inds) belonging
+        to the node(s) given.
+        
+        Note: If extracting weight vector for a single node, returned value
+              will still be a 2d numpy array. Compress using np.ravel()
+        
+        Parameters
+        ----------
+        nodes: single 2-element integer tuple / list, or 2d numpy array
+            array with rows being 2-element node indices
+        weight_inds: tuple / list / 1d numpy array, optional
+            Indices of weight vector to retrieve.
+            Entire weight vector is retrieved if weight_inds is None
+            
+        Returns
+        -------
+        2d numpy array
+            Each row correspond to weight vector slice by node from same row
+            of nodes
+        """
+        
+        ## If no weight_inds given, just extract entire weight vector
+        if weight_inds is None:
+            weight_inds = np.arange( self._weights.shape[2] )
+        
+        if isinstance(nodes, tuple) or len(nodes.shape) == 1:
+            nodes = np.array([ nodes ])
+        
+        return self._weights[ nodes[:,0], nodes[:,1], : ][ :, weight_inds ]
+
+    
+    
+    
+        
     def project_nodes(self, ax, xy_inds, sigma_t, show_neighborhood=None):
         """
         Project nodes onto the feature space of data given by the
@@ -808,8 +1017,8 @@ class newb_som:
         
     
     
-    def train(self, data, plot_every=None, xy=None, save_movie=None,
-              weight_init=None, all_data_per_iter=None):
+    def train(self, data, plot_every=None, xy=None, weight_init=None,
+              all_data_per_iter=None, show_neighborhood=None):
         """
         Batch-trains SOM using data
         No data shuffling
@@ -825,15 +1034,15 @@ class newb_som:
             List of strs (if pandas dataframe) or ints (if raw numpy array)
             representing column indices of data to plot. SOM nodes will
             be plotted on top using their weight vectors as "positions"
-        save_movie: str, optional
-            If given folder address as str, will save movie of plots made
-            at address
         weight_init: str, optional
             Decides how the weights will be initialized
         all_data_per_iter: bool (default=False)
             If True, weight changes due to *all* data will be considered
             before updating the weights; otherwise, weight update will be
             per sample
+        show_neighborhood: bool (default=False)
+            Show the neighborhood in the plots if True.
+            Will do *nothing* if plot_every is not set
 
         Returns
         -------
@@ -842,6 +1051,9 @@ class newb_som:
         
         if all_data_per_iter is None:
             all_data_per_iter = False
+            
+        if show_neighborhood is None:
+            show_neighborhood = False
         
         ## First, prepare weights if they haven't been initialized
         if weight_init is None:
@@ -900,6 +1112,7 @@ class newb_som:
                 data_ax = axes[0,0]
                 decay_ax = axes[1,0]
                 neigh_ax = axes[0,1]
+                u_mat_ax = axes[1,1]
                 
                 
                 # plot data
@@ -926,7 +1139,7 @@ class newb_som:
                 
                     
                 self.project_nodes(data_ax, xy_inds, sigma_t,
-                                   show_neighborhood=True)
+                                   show_neighborhood=show_neighborhood)
                 #data_ax.set_title('Iteration '+str(t+1)+' out of '+str(self.max_iter))
                 
                 
@@ -950,6 +1163,13 @@ class newb_som:
                               lw=3,
                               linestyle='solid')
                 neigh_ax.set_title('Neighborhood function ')
+                
+                
+                # plot u-matrix
+                dist_map = self.distance_map(as_array=True)
+                u_mat_plot = u_mat_ax.pcolor( dist_map.T, cmap='bone_r' )
+                plt.colorbar(u_mat_plot, ax=u_mat_ax)
+                u_mat_ax.set_title('U-matrix')
                 
                 
                 # set title
