@@ -119,20 +119,24 @@ if __name__ == "__main__":
     
     ## params for data generation
     rng_seed = 1
+    total_pts = 100*1000
+    num_gauss = 3
+    frac_unif = 0.1
     means = [ np.array([0,0]),
-              np.array([3,0]),
-              np.array([0,3]) ]
-    scale = 0.2
-    corr = 0.1
+              np.array([10,0]),
+              np.array([0,10]) ]
+    scale = 0.1
+    corr = 0.99
     covmats = [ np.identity(2) * scale,
                 np.array([[1,corr],[corr,1]]) * scale,
                 np.array([[1,-corr],[-corr,1]]) * scale ]
     
     ## make gaussian data
-    dat, g_src = make_mv_gauss(num_gauss=3,
+    n_per_gauss = int( total_pts * (1 - frac_unif) / num_gauss )
+    dat, g_src = make_mv_gauss(num_gauss=num_gauss,
                                means=means,
                                covmats = covmats,
-                               n_per_gauss=500,
+                               n_per_gauss=n_per_gauss,
                                seed=rng_seed,
                                single_array=True)
     
@@ -140,7 +144,7 @@ if __name__ == "__main__":
     mins = dat.min(axis=0)
     maxs = dat.max(axis=0)
     bounds = [ (mins[i],maxs[i]) for i in range(dat.shape[1]) ]
-    unif_dat = make_unif_data(n=int(dat.shape[0]/2),
+    unif_dat = make_unif_data(n=total_pts - dat.shape[0],
                               dim_bounds=bounds,
                               seed=rng_seed)
     unif_src = np.full(unif_dat.shape[0], max(g_src)+1)
@@ -154,17 +158,21 @@ if __name__ == "__main__":
     plt.show()
     plt.close()
     
+    ## shuffle
+    inds = np.random.permutation( dat.shape[0] )
+    dat = dat[inds]
+    src = src[inds]
     
     
     
     
     ## som params
-    som_shape = (5,5)
-    max_iter = 25
-    sigma_start = 0.8
+    som_shape = (25,25)
+    max_iter = 500
+    sigma_start = 5.0
     sigma_end = 0.1
-    learning_rate_start = 0.01
-    learning_rate_end = 0.001
+    learning_rate_start = 0.1
+    learning_rate_end = 0.01
     decay_type = 'exponential'
     data_fit = None
     
@@ -179,8 +187,12 @@ if __name__ == "__main__":
                    decay = decay_type,
                    seed = rng_seed)
     
-    model_data = prep_data(dat, fit=data_fit)
-    som.train(model_data, plot_every=1, weight_init='linspace')
+    model_data = prep_data(dat,
+                           fit=data_fit)
+    som.train(model_data,
+              plot_every=30,
+              weight_init='linspace',
+              all_data_per_iter=False)
 
 
 

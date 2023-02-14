@@ -809,7 +809,7 @@ class newb_som:
     
     
     def train(self, data, plot_every=None, xy=None, save_movie=None,
-              weight_init=None):
+              weight_init=None, all_data_per_iter=None):
         """
         Batch-trains SOM using data
         No data shuffling
@@ -828,11 +828,20 @@ class newb_som:
         save_movie: str, optional
             If given folder address as str, will save movie of plots made
             at address
+        weight_init: str, optional
+            Decides how the weights will be initialized
+        all_data_per_iter: bool (default=False)
+            If True, weight changes due to *all* data will be considered
+            before updating the weights; otherwise, weight update will be
+            per sample
 
         Returns
         -------
         None.
         """
+        
+        if all_data_per_iter is None:
+            all_data_per_iter = False
         
         ## First, prepare weights if they haven't been initialized
         if weight_init is None:
@@ -971,8 +980,31 @@ class newb_som:
             # ongoing weight updates
             new_weights = np.zeros( self._weights.shape )
             
-            # compute new weights from data for each data vector
-            for q in range(data_arr.shape[0]):
+            if all_data_per_iter:
+            
+                # compute new weights from data for each data vector
+                for q in range(data_arr.shape[0]):
+                    
+                    data_vec = data_arr[q]
+                    bmu = self.get_BMU(data_vec)
+                    neighborhood_vals = self.compute_neighborhood(bmu,
+                                                                  sigma_t)
+                    #print(neighborhood_vals)
+                    #if q == 5:
+                    #    raise ValueError
+                    #print(bmu, neighborhood_vals)
+                    # compute weight change *due only to current data vector!*
+                    new_weights = new_weights + \
+                           self._compute_weight_change_from_data_i(
+                                                alpha_t,
+                                                neighborhood_vals,
+                                                data_vec
+                                                                  )
+                           
+            else:
+                
+                # use iter mod data length
+                q = t % data_arr.shape[0]
                 
                 data_vec = data_arr[q]
                 bmu = self.get_BMU(data_vec)
@@ -992,7 +1024,7 @@ class newb_som:
             
             # once all data has been processed for this iteration,
             # update weights
-            print(t,"\n",new_weights)
+            #print(t,"\n",new_weights)
             #if t == 5:
             #    raise ValueError
             self._weights = self._weights + new_weights
