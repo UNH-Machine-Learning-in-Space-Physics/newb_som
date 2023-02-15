@@ -14,6 +14,7 @@ import pandas as pd
 import os
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Circle
+from matplotlib import animation  
 
 
 
@@ -32,7 +33,9 @@ _EXPONENTIAL = 'exponential'
 _ALLOWED_DECAY = [ _LINEAR, _EXPONENTIAL ]
 
 _EUCLIDEAN = 'euclidean'
-_ALLOWED_METRIC = [ _EUCLIDEAN ]
+_MANHATTAN = 'manhattan'
+#_COSINE = 'cosine'
+_ALLOWED_METRIC = [ _EUCLIDEAN, _MANHATTAN ]
 
 
 
@@ -119,7 +122,7 @@ class Distance:
         Parameters
         ----------
         starting_pt: 1d numpy array (a vector)
-            Point distances will be measureed relative to.
+            Point distances will be measured relative to.
         ending_pts: n-d numpy array 
             Ending point(s) of vector(s)
             
@@ -131,10 +134,72 @@ class Distance:
         """
         return np.linalg.norm( starting_pt - ending_pts,
                                axis=len(ending_pts.shape)-1 )
-        
     
     
+    
+    
+    
+    def _get_manhattan_distance(starting_pt, ending_pts):
+        """
+        Manhattan distance - the subtraction operation is applied over the
+        LAST axis in the ending_pts n-d array
+
+        Parameters
+        ----------
+        starting_pt: 1d numpy array (a vector)
+            Point distances will be measured relative to.
+        ending_pts: n-d numpy array 
+            Ending point(s) of vector(s)
+            
+
+        Returns
+        -------
+        1d numpy array
+            Distance(s) from starting_pt to ending_pts
+        """
+        return np.sum( 
+                        np.abs( 
+                            np.subtract(starting_pt, ending_pts)
+                              ),
+                        axis=len(ending_pts.shape)-1
+                     )
+    
+    
+    
+    
+    
+    def _get_cosine_distance(starting_pt, ending_pts):
+        """
+        Cosine distance - the subtraction operation is applied over the
+        LAST axis in the ending_pts n-d array
+
+        Parameters
+        ----------
+        starting_pt: 1d numpy array (a vector)
+            Point distances will be measured relative to.
+        ending_pts: n-d numpy array 
+            Ending point(s) of vector(s)
+            
+
+        Returns
+        -------
+        1d numpy array
+            Distance(s) from starting_pt to ending_pts
+        """
+        ### Hmm... seems to be implemented correctly, but results eventually
+        ### diverge? Can't figure it out...
+        denom = np.linalg.norm(starting_pt) \
+                    * np.linalg.norm(ending_pts,
+                                     axis=len(ending_pts.shape)-1)
+        numerator = np.sum(
+                np.einsum('..., ...', starting_pt, ending_pts),
+                axis = len(ending_pts.shape)-1
+                          )
+        return 1 - np.nan_to_num( ( numerator / denom ) )
         
+
+        
+    
     
     def get_distance_function(distance_type):
         """
@@ -143,7 +208,10 @@ class Distance:
         func = None
         if distance_type == _EUCLIDEAN:
             func = Distance._get_euclidean_distance
-            
+        elif distance_type == _MANHATTAN:
+            func = Distance._get_manhattan_distance
+        #elif distance_type == _COSINE:
+        #    func = Distance._get_cosine_distance
         else:
             raise ValueError('Distance function \'' + distance_type
                              + '\' not recognized.')
@@ -238,7 +306,7 @@ class Decay:
         func = None
         if decay_type == _LINEAR:
             func = Decay._get_linear_decay
-        if decay_type == _EXPONENTIAL:
+        elif decay_type == _EXPONENTIAL:
             func = Decay._get_exponential_decay
             
         else:
@@ -786,8 +854,8 @@ class newb_som:
                 
                 # compute distances between central node and adjancent ones
                 adjacent_distances = self._distance_function( 
-                                self.get_node_weights( node_ind_arr ),
-                                self.get_node_weights( adjacent_nodes )
+                                    self.get_node_weights( node_ind_arr ),
+                                    self.get_node_weights( adjacent_nodes )
                                                             )
                 
                 # Assign sum of distances to dict with central node as key
@@ -958,8 +1026,8 @@ class newb_som:
                 # turn list into patch collection and plot
                 patch_coll = PatchCollection(neigh_patches, match_original=True)
                 ax.add_collection(patch_coll)
+                
         
-    
     
     
     
@@ -1091,6 +1159,7 @@ class newb_som:
         
         sigma_vals = []
         alpha_vals = []
+        axes_list = []
         for t in range(self.max_iter):
             
             # Update neighborhood size and learning rate for current iteration
@@ -1113,6 +1182,7 @@ class newb_som:
                 decay_ax = axes[1,0]
                 neigh_ax = axes[0,1]
                 u_mat_ax = axes[1,1]
+                axes_list.append( axes )
                 
                 
                 # plot data
@@ -1248,6 +1318,10 @@ class newb_som:
             #if t == 5:
             #    raise ValueError
             self._weights = self._weights + new_weights
+            
+        
+        if plot_every is not None:
+            animation.ArtistAnimation(fig,)
             
     
     

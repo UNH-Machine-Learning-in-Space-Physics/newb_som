@@ -10,6 +10,7 @@ from newb_som import newb_som
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import seaborn as sns
+from sklearn.datasets import make_moons
 
 
 
@@ -82,7 +83,28 @@ def make_unif_data(n=None, dim_bounds=None, seed=None):
         data[:,i] = _min + (_max - _min) * data[:,i]
         
     return data
+
+
+
+
+
+
+def add_unif_data(dat, src, frac_unif=None, seed=None):
+    if frac_unif is None:
+        frac_unif = 0.2
     
+    
+    mins = dat.min(axis=0)
+    maxs = dat.max(axis=0)
+    bounds = [ (mins[i],maxs[i]) for i in range(dat.shape[1]) ]
+    
+    unif_dat = make_unif_data(n          = int(frac_unif * dat.shape[0]),
+                              dim_bounds = bounds,
+                              seed       = rng_seed)
+    
+    unif_src = np.full(unif_dat.shape[0], np.max(src)+1)
+    
+    return np.vstack( [ dat, unif_dat ] ), np.hstack( [ src, unif_src ] )
     
 
 
@@ -105,18 +127,8 @@ def make_noisy_gaussians(num_gauss   = None,
                                seed=rng_seed,
                                single_array=True)
 
-    ## make uniform data
-    mins = dat.min(axis=0)
-    maxs = dat.max(axis=0)
-    bounds = [ (mins[i],maxs[i]) for i in range(dat.shape[1]) ]
-    unif_dat = make_unif_data(n=total_pts - dat.shape[0],
-                              dim_bounds=bounds,
-                              seed=rng_seed)
-    unif_src = np.full(unif_dat.shape[0], max(g_src)+1)
-
-    ## combine
-    dat = np.vstack( [dat, unif_dat] )
-    src = np.hstack( [g_src, unif_src] )
+    ## add uniform data
+    dat, src = add_unif_data(dat, g_src, frac_unif=unif_frac, seed=rng_seed)
     
     return dat, src
 
@@ -156,6 +168,12 @@ def quantization_error_hist(som, data, orig_data, func=None, outliers=None):
         data used to train the som
     orig_data: 2d numpy array / dataframe
         original data, BEFORE the transformation
+    func: function (default = np.mean)
+        Function that returns a scalar value
+        Data exceeding this value will be indicated in the plot
+    outliers: bool (default=False)
+        If True, will make scatter plot with inliers / outliers plotted
+        separately. If False, colormap of distance will be used.
 
     Returns
     -------
@@ -185,11 +203,13 @@ def quantization_error_hist(som, data, orig_data, func=None, outliers=None):
                    'c':'black'}
     
     ## make boxenplot with vert lines
+    box_ax.set_title('Boxenplot QE')
     sns.boxenplot(quants, orient='h', ax=box_ax)
     box_ax.axvline(x=avg_quant, **mean_kwargs)
     box_ax.axvline(x=func_val, **func_kwargs)
     
     ## make log-scale hist
+    hist_ax.set_title('Log-hist QE')
     hist_ax.hist(quants, bins=50, log=True)
     hist_ax.axvline(x=avg_quant, **mean_kwargs)
     hist_ax.axvline(x=func_val, **func_kwargs)
@@ -199,14 +219,17 @@ def quantization_error_hist(som, data, orig_data, func=None, outliers=None):
         _out = np.where( quants > func_val )[0]
         _in = np.setdiff1d( np.arange(data.shape[0]), _out )
         scat_ax.scatter( orig_data[_in,0], orig_data[_in,1], s=2.5, c='blue')
-        scat_ax.scatter( orig_data[_out,0], orig_data[_out,1], s=2.5, c='black')
+        scat_ax.scatter( orig_data[_out,0], orig_data[_out,1], s=2.5, c='red')
+        scat_ax.set_title('2D data - inliers blue / outliers red')
     
     else:
         res = scat_ax.scatter( orig_data[:,0], orig_data[:,1],
                               cmap='plasma', c=quants, s=2.5)
+        scat_ax.set_title('2D data - avg distance ')
         fig.colorbar(res, ax=scat_ax)
     
-    fig.subplots_adjust(hspace=0.2, wspace=0.57)
+    fig.subplots_adjust(hspace=0.4, wspace=0.57)
+    fig.suptitle('[BMU(data_point) - data_point] for all data (Quantization Error)')
     
     
     
@@ -231,7 +254,7 @@ if __name__ == "__main__":
     rng_seed = 1
     total_pts = 100*1000
     num_gauss = 3
-    frac_unif = 0.01
+    frac_unif = 0.3
     means = [ np.array([0,0]),
               np.array([10,0]),
               np.array([0,10]) ]
@@ -241,12 +264,20 @@ if __name__ == "__main__":
                 np.array([[1,corr],[corr,1]]) * scale,
                 np.array([[1,-corr],[-corr,1]]) * scale ]
     
+    """
     dat, src = make_noisy_gaussians(num_gauss  = num_gauss,
                                     num_points = total_pts,
                                     means      = means,
                                     covmats    = covmats,
                                     seed       = rng_seed,
                                     unif_frac  = frac_unif)
+    """
+    
+    dat, src = make_moons(n_samples=total_pts)
+    dat, src = add_unif_data(dat,
+                             src,
+                             frac_unif=frac_unif,
+                             seed=rng_seed)
     
     ## showcase
     plt.scatter(dat[:,0], dat[:,1], s=2)
@@ -262,13 +293,14 @@ if __name__ == "__main__":
     
     
     ## som params
-    som_shape = (5,5)
+    som_shape = (40,40)
     max_iter = 500
     sigma_start = 3.0
     sigma_end = 0.1
     learning_rate_start = 0.1
     learning_rate_end = 0.01
     decay_type = 'exponential'
+    distance_type = 'euclidean'
     data_fit = None
     
     ## instantiate som
@@ -280,6 +312,7 @@ if __name__ == "__main__":
                    sigma_start = sigma_start,
                    sigma_end = sigma_end,
                    decay = decay_type,
+                   distance = distance_type,
                    seed = rng_seed)
     
     model_data = prep_data(dat,
@@ -292,7 +325,11 @@ if __name__ == "__main__":
     
     
     # show quant error stats
-    quantization_error_hist(som, model_data, dat)
+    quantization_error_hist(som, model_data, dat,
+                            outliers=False)
+    quantization_error_hist(som, model_data, dat,
+                            func= lambda x: np.percentile(x,99),
+                            outliers=True)
 
 
 
