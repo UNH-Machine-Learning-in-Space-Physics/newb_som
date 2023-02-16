@@ -252,7 +252,7 @@ if __name__ == "__main__":
     
     ## params for data generation
     rng_seed = 1
-    total_pts = 100*1000
+    total_pts = 10*1000
     num_gauss = 3
     frac_unif = 0.3
     means = [ np.array([0,0]),
@@ -293,8 +293,8 @@ if __name__ == "__main__":
     
     
     ## som params
-    som_shape = (40,40)
-    max_iter = 500
+    som_shape = (15,15)
+    max_iter = 100
     sigma_start = 3.0
     sigma_end = 0.1
     learning_rate_start = 0.1
@@ -302,6 +302,7 @@ if __name__ == "__main__":
     decay_type = 'exponential'
     distance_type = 'euclidean'
     data_fit = None
+    plot_every = 1
     
     ## instantiate som
     som = newb_som(som_shape = som_shape,
@@ -317,11 +318,17 @@ if __name__ == "__main__":
     
     model_data = prep_data(dat,
                            fit=data_fit)
-    som.train(model_data,
-              plot_every=30,
-              weight_init='linspace',
-              all_data_per_iter=False,
-              show_neighborhood=False)
+    
+    anim = som.train(model_data,
+                     plot_every=plot_every,
+                     weight_init='linspace',
+                     all_data_per_iter=False,
+                     show_neighborhood=False,
+                     animate=True)
+    print('Done training!')
+    anim.save('/home/jedmond/Desktop/som.mp4', fps=30)
+    print('Made movie!')
+    plt.close()
     
     
     # show quant error stats

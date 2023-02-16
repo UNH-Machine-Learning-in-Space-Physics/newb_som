@@ -14,7 +14,9 @@ import pandas as pd
 import os
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Circle
-from matplotlib import animation  
+#from matplotlib import animation
+from celluloid import Camera
+from tqdm import tqdm
 
 
 
@@ -1080,13 +1082,32 @@ class newb_som:
     
                 
         return np.vstack(x), np.vstack(y)
-        
+    
+    
+    
+    
+    
+    
+    def _create_train_plot(self, data):
+        """
+        Creates a plot of various data
+
+        Parameters
+        ----------
+        data : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         
         
     
     
     def train(self, data, plot_every=None, xy=None, weight_init=None,
-              all_data_per_iter=None, show_neighborhood=None):
+              all_data_per_iter=None, show_neighborhood=None, animate=None):
         """
         Batch-trains SOM using data
         No data shuffling
@@ -1122,6 +1143,9 @@ class newb_som:
             
         if show_neighborhood is None:
             show_neighborhood = False
+            
+        if animate is None:
+            animate = False
         
         ## First, prepare weights if they haven't been initialized
         if weight_init is None:
@@ -1157,10 +1181,19 @@ class newb_som:
         data_arr = data.values if _is_df else data
         
         
+        # prepare fig object
+        fig, axes = plt.subplots(2,2)
+        data_ax = axes[0,0]
+        decay_ax = axes[1,0]
+        neigh_ax = axes[0,1]
+        u_mat_ax = axes[1,1]
+        
+        
+        camera = Camera(fig)
+        
         sigma_vals = []
         alpha_vals = []
-        axes_list = []
-        for t in range(self.max_iter):
+        for t in tqdm(range(self.max_iter)):
             
             # Update neighborhood size and learning rate for current iteration
             sigma_t = self._decay_function(self.sigma_start,
@@ -1177,21 +1210,21 @@ class newb_som:
             # check if plotting
             if (plot_every is not None) and (t % plot_every == 0):
                 
-                fig, axes = plt.subplots(2,2)
-                data_ax = axes[0,0]
-                decay_ax = axes[1,0]
-                neigh_ax = axes[0,1]
-                u_mat_ax = axes[1,1]
-                axes_list.append( axes )
+                if not animate:
+                    fig, axes = plt.subplots(2,2)
+                    data_ax = axes[0,0]
+                    decay_ax = axes[1,0]
+                    neigh_ax = axes[0,1]
+                    u_mat_ax = axes[1,1]
                 
                 
                 # plot data
                 if _is_df:
-                    data_ax.scatter( *data[xy].values.T, s=1 )
+                    data_ax.scatter( *data[xy].values.T, s=1, c='blue' )
                     x_data = data[xy].values[:,0]
                     y_data = data[xy].values[:,1]
                 else:
-                    data_ax.scatter( *data[:,xy].T, s=1 )
+                    data_ax.scatter( *data[:,xy].T, s=1, c='blue' )
                     x_data = data[:,xy[0]]
                     y_data = data[:,xy[1]]
                 
@@ -1214,10 +1247,12 @@ class newb_som:
                 
                 
                 # plot sigma and learning rate
-                decay_ax.plot(np.arange(t+1),sigma_vals,lw=5)
+                decay_ax.plot(np.arange(t+1),sigma_vals,'blue',lw=5)
                 decay_ax.set_ylim( [ self.sigma_end, self.sigma_start ] )
                 decay_ax.set_xlim( [ 0, self.max_iter ] )
-                decay_ax.set_title('sigma(t)')
+                #decay_ax.set_title('sigma(t)')
+                decay_ax.text(0.3, 1.05, 'sigma(t='+str(t)+')',
+                              transform=decay_ax.transAxes)
                 
                 
                 # plot neigh func
@@ -1225,11 +1260,13 @@ class newb_som:
                 neigh_ax.plot(xdata_neigh,
                               self._neighborhood_function(xdata_neigh,
                                                           self.sigma_start),
+                              'blue',
                               lw=3,
                               linestyle='dashed')
                 neigh_ax.plot(xdata_neigh,
                               self._neighborhood_function(xdata_neigh,
                                                           sigma_t),
+                              'orange',
                               lw=3,
                               linestyle='solid')
                 neigh_ax.set_title('Neighborhood function ')
@@ -1238,31 +1275,23 @@ class newb_som:
                 # plot u-matrix
                 dist_map = self.distance_map(as_array=True)
                 u_mat_plot = u_mat_ax.pcolor( dist_map.T, cmap='bone_r' )
-                plt.colorbar(u_mat_plot, ax=u_mat_ax)
+                #cax = u_mat_ax.inset_axes([1.04, 0, 0.08, 1.0])
+                #fig.colorbar(u_mat_plot, ax=u_mat_ax, cax=cax,
+                #             boundaries=[0,0.2,0.4,0.6,0.8,1.0])
+                #fig.clim(0,1)
                 u_mat_ax.set_title('U-matrix')
                 
                 
                 # set title
-                fig.suptitle('Iteration '+str(t+1)+' out of '+str(self.max_iter))
-                plt.subplots_adjust(hspace=0.35)
+                #fig.suptitle('Iteration '+str(t+1)+' out of '+str(self.max_iter))
+                fig.subplots_adjust(hspace=0.35)
                 
+                if animate:
+                    camera.snap()
+                else:
+                    plt.show()
+                    plt.close()
                 
-                plt.show()
-                plt.close()
-                
-                """# plot nodes on data
-                node_posits = self._weights[:,:,xy_inds].reshape(
-                                                    np.prod(self.som_shape),
-                                                    2
-                                                                )
-                plt.scatter(*node_posits.T,
-                            s=100,
-                            marker='o',
-                            facecolors='None',
-                            edgecolors='black')
-                plt.title('Iteration '+str(t)+' out of '+str(self.max_iter))
-                plt.show()
-                plt.close()"""
                     
                 
             
@@ -1279,10 +1308,6 @@ class newb_som:
                     bmu = self.get_BMU(data_vec)
                     neighborhood_vals = self.compute_neighborhood(bmu,
                                                                   sigma_t)
-                    #print(neighborhood_vals)
-                    #if q == 5:
-                    #    raise ValueError
-                    #print(bmu, neighborhood_vals)
                     # compute weight change *due only to current data vector!*
                     new_weights = new_weights + \
                            self._compute_weight_change_from_data_i(
@@ -1320,8 +1345,8 @@ class newb_som:
             self._weights = self._weights + new_weights
             
         
-        if plot_every is not None:
-            animation.ArtistAnimation(fig,)
+        if animate:
+            return camera.animate()
             
     
     
