@@ -757,6 +757,35 @@ class newb_som:
             x,y = np.meshgrid( *weights )
             weights = np.vstack( [x.reshape(x.size), y.reshape(y.size)] ).T.\
                     reshape( *som_shape, self.data_size )
+                    
+        
+        elif init_type == 'pca':
+            
+            if self.data_size < 2:
+                raise ValueError('PCA only works for data with dim >= 2')
+                
+            # do the PCA
+            evals, evecs = np.linalg.eig( np.cov( data.T ) )
+            p0_ind, p1_ind = np.argsort( evals )[::-1][:2]
+            
+            # transform data into eigenspace and find range of data over
+            # first two largest principal components
+            eig_data = np.matmul(data,evecs)
+            (p0_min, p0_max), (p1_min, p1_max) = np.vstack([
+                                    eig_data.min(axis=0), eig_data.max(axis=0)
+                                                          ]).T
+            print( p0_min, p0_max, p1_min, p1_max )
+            
+            
+            # get bounds to space nodes over by transforming data into
+            # eigenvector space
+            weights = np.zeros( [ *som_shape, data.shape[1] ] )
+            for i, ci in enumerate( np.linspace(p0_min, p0_max, som_shape[0]) ):
+                for q, cq in enumerate( np.linspace(p1_min, p1_max, som_shape[1]) ):
+            #for i, ci in enumerate( np.linspace(-1, 1, som_shape[0]) ):
+            #    for q, cq in enumerate( np.linspace(-1, 1, som_shape[1]) ):
+                    weights[i,q] = (ci * evecs[:,p0_ind] 
+                                    + cq * evecs[:,p1_ind])
             
             
             

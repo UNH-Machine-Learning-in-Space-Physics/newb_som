@@ -11,6 +11,8 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import seaborn as sns
 from sklearn.datasets import make_moons
+from sklearn.datasets import make_s_curve
+from matplotlib import animation
 
 
 
@@ -25,6 +27,8 @@ def make_mv_gauss(num_gauss    = None,
         num_gauss = 1
     if n_per_gauss is None:
         n_per_gauss = 10
+    if np.issubdtype(type(n_per_gauss),np.number):
+        n_per_gauss = [ int(n_per_gauss) for i in range(num_gauss) ]
     if means is None:
         means = [ i * np.array([1,1]) for i in range(num_gauss) ]
     if not isinstance(means, list):
@@ -47,7 +51,7 @@ def make_mv_gauss(num_gauss    = None,
             rng.multivariate_normal(
                     means[i],
                     covmats[i],
-                    size=n_per_gauss
+                    size=n_per_gauss[i]
                                     )
                     )
     
@@ -61,7 +65,7 @@ def make_mv_gauss(num_gauss    = None,
     else:
         data = np.vstack(data)
         source = np.hstack(
-                [ np.full(n_per_gauss,i) for i in range(num_gauss) ]
+                [ np.full(n_per_gauss[i],i) for i in range(num_gauss) ]
                           )
         return data, source
 
@@ -70,9 +74,10 @@ def make_mv_gauss(num_gauss    = None,
 
 
 
-def make_unif_data(n=None, dim_bounds=None, seed=None):
+def make_unif_data(n=None, dim_bounds=None, seed=None, return_src=None):
     if n is None: n = 30
     if dim_bounds is None: dim_bounds = [ [0,1], [0,1] ]
+    if return_src is None: return_src = False
     
     rng = np.random.RandomState(seed)
     
@@ -81,8 +86,11 @@ def make_unif_data(n=None, dim_bounds=None, seed=None):
     for i in range(len(dim_bounds)):
         _min, _max = dim_bounds[i]
         data[:,i] = _min + (_max - _min) * data[:,i]
-        
-    return data
+    
+    if not return_src:
+        return data
+    else:
+        return data, np.full(data.shape[0],0)
 
 
 
@@ -119,7 +127,7 @@ def make_noisy_gaussians(num_gauss   = None,
                          unif_frac   = None):
     
     ## make gaussian data
-    n_per_gauss = int( total_pts * (1 - frac_unif) / num_gauss )
+    n_per_gauss = int( num_points * (1 - frac_unif) / num_gauss )
     dat, g_src = make_mv_gauss(num_gauss=num_gauss,
                                means=means,
                                covmats = covmats,
@@ -231,8 +239,128 @@ def quantization_error_hist(som, data, orig_data, func=None, outliers=None):
     fig.subplots_adjust(hspace=0.4, wspace=0.57)
     fig.suptitle('[BMU(data_point) - data_point] for all data (Quantization Error)')
     
+
+
+
+
+
+
+
+def plot_pca(dat):
+    """
+    Plots the top two principal components and the PCA-rotated data
     
+    Parameters
+    ----------
+    dat: 2d numpy array
+        2d array of data (features as columns)
+        
+    Returns
+    -------
+    None
+    """
     
+    # Make subplots and plot raw data with pca directions
+    fig, (dat_ax, pca_ax) = plt.subplots(1,2)
+    dat_ax.scatter(dat[:,0], dat[:,1], s=1)
+    
+    # Get eigenvalues/vectors (in order of largest to smallest)
+    evals, evecs = np.linalg.eig( np.cov( dat.T ) )
+    sort_inds = np.argsort( evals )[::-1]
+    #sort_evals = evals[sort_inds]
+    #sort_evecs = evecs.T[sort_inds].T
+    
+    # scale eigenvalues to some range based on plot limits
+    x_range, y_range = np.vstack( [ dat.min(axis=0), dat.max(axis=0) ] ).T
+    center_pt = np.mean( [ dat_ax.get_xlim(), dat_ax.get_ylim() ], axis=1 )
+    max_arrow_length = np.sqrt(np.sum( 
+                            (np.diff( [ x_range, y_range ] ) / 2)**2
+                                     )) / 3
+    scaled_evals = evals * max_arrow_length / np.max(evals)
+    evec_angles = np.array( [ np.arctan(vec[1]/vec[0]) for vec in evecs ] )
+    
+    # compute and plot each arrow length based on angle of eigvector
+    for i in range(evec_angles.shape[0]):
+        arrow_end = np.array([
+                    center_pt[0] + scaled_evals[i] * np.cos( evec_angles[i] ),
+                    center_pt[1] + scaled_evals[i] * np.sin( evec_angles[i] )
+                            ])
+        dat_ax.arrow(*center_pt, *(center_pt - arrow_end),
+                     width = max_arrow_length / 20,
+                     facecolor='black',
+                     edgecolor='None')
+        
+    pca_dat = np.matmul(dat,evecs)
+    pca_ax.scatter( *pca_dat.T, s=1 )
+    
+    plt.show()
+    plt.close()
+    
+
+
+
+
+
+
+
+def rotate_data(data, angle_degrees=None):
+    """
+    Rotate the 2d data about an angle
+
+    Parameters
+    ----------
+    data: 2d numpy array
+    angle_degrees: float
+        Angle to rotate data about by (in degrees)
+        
+    Returns
+    -------
+    2d numpy array (same dims as data)
+    """
+    
+    if angle_degrees is None:
+        angle_degrees = 45
+    
+    ang_rad = angle_degrees * np.pi/180
+    rot = np.array([ [np.cos(ang_rad), -np.sin(ang_rad)],
+                     [np.sin(ang_rad), np.cos(ang_rad)]  ])
+    return np.matmul(dat,rot)
+
+
+
+
+
+
+
+def combine_datasets(dat_list, src_list):
+    """
+    Combine datasets into single 2d numpy array with indication
+    of what datapoint belongs to what set
+    
+    Parameters
+    ----------
+    dat_list: list of 2d numpy arrays
+        list of datasets
+    src_list: list of 1d numpy arrays
+        list of 1d integer array indicating what dataset a point belongs to
+        
+    Returns
+    -------
+    2d numpy arr (combined dataset), 1d numpy arr (combined source arr)
+    """
+    
+    combined_dat = np.vstack( dat_list )
+    src_ints = [ np.unique(arr) for arr in src_list ]
+    for i in range(1,len(src_ints)):
+        prev_max_int = np.max( src_list[i-1] ) 
+        src_list[i] = src_list[i] + prev_max_int + 1
+    combined_src = np.hstack( src_list )
+    
+    return combined_dat, combined_src
+
+
+
+
         
 
 
@@ -252,9 +380,9 @@ if __name__ == "__main__":
     
     ## params for data generation
     rng_seed = 1
-    total_pts = 10*1000
+    pts_per_dataset = 10*1000
     num_gauss = 3
-    frac_unif = 0.3
+    frac_unif = 0.1
     means = [ np.array([0,0]),
               np.array([10,0]),
               np.array([0,10]) ]
@@ -264,25 +392,58 @@ if __name__ == "__main__":
                 np.array([[1,corr],[corr,1]]) * scale,
                 np.array([[1,-corr],[-corr,1]]) * scale ]
     
-    """
-    dat, src = make_noisy_gaussians(num_gauss  = num_gauss,
-                                    num_points = total_pts,
-                                    means      = means,
-                                    covmats    = covmats,
-                                    seed       = rng_seed,
-                                    unif_frac  = frac_unif)
-    """
     
-    dat, src = make_moons(n_samples=total_pts)
-    dat, src = add_unif_data(dat,
-                             src,
-                             frac_unif=frac_unif,
-                             seed=rng_seed)
+    ## make gaussian data
+    g_dat, g_src = make_mv_gauss(num_gauss    = num_gauss,
+                                 n_per_gauss  = int(pts_per_dataset)/num_gauss,
+                                 means        = means,
+                                 covmats      = covmats,
+                                 seed         = rng_seed,
+                                 single_array = True)
     
-    ## showcase
-    plt.scatter(dat[:,0], dat[:,1], s=2)
-    plt.show()
-    plt.close()
+
+    ## make moon data
+    m_dat, m_src = make_moons(n_samples=pts_per_dataset,
+                              noise = 0.01,
+                              random_state = rng_seed)
+    # shift it
+    m_dat[:,1] = 1/(1 + m_dat[:,1] - m_dat[:,1].mean())
+    m_dat = m_dat + np.array([10,5])
+    
+    
+    ## make s-curve data (but only in 2d)
+    s_dat, _ = make_s_curve(n_samples = pts_per_dataset,
+                            noise=0.01,
+                            random_state = rng_seed)
+    s_dat = s_dat[:,[0,2]]
+    s_src = np.full( s_dat.shape[0], 0 )
+    s_dat = s_dat + np.array([5,5])
+    
+    
+    ## combine datasets
+    dat, src = combine_datasets( [g_dat, m_dat, s_dat],
+                                 [g_src, m_src, s_src] )
+    
+    
+    ## add in uniform random data
+    mins = dat.min(axis=0)
+    maxs = dat.max(axis=0)
+    bounds = np.array( [ dat.min(axis=0), dat.max(axis=0) ] ).T
+    u_dat, u_src = make_unif_data(n = int(dat.shape[0] * frac_unif),
+                                  dim_bounds = bounds,
+                                  seed = rng_seed,
+                                  return_src = True)
+    
+    
+    ## combine datasets (again, but with unif)
+    dat, src = combine_datasets( [dat, u_dat],
+                                 [src, u_src] )
+    
+    
+    # rotate data
+    dat = rotate_data(dat,np.pi*15)
+    
+    
     
     ## shuffle
     inds = np.random.permutation( dat.shape[0] )
@@ -290,19 +451,26 @@ if __name__ == "__main__":
     src = src[inds]
     
     
+    plot_pca(dat)
+    
+    
+    
+    
     
     
     ## som params
-    som_shape = (15,15)
-    max_iter = 100
+    som_shape = (22,22)
+    max_iter = 1000
     sigma_start = 3.0
     sigma_end = 0.1
     learning_rate_start = 0.1
     learning_rate_end = 0.01
     decay_type = 'exponential'
     distance_type = 'euclidean'
-    data_fit = None
-    plot_every = 1
+    data_fit = 'standardize'
+    plot_every = 100
+    weight_init = 'pca'
+    animate = False
     
     ## instantiate som
     som = newb_som(som_shape = som_shape,
@@ -321,13 +489,17 @@ if __name__ == "__main__":
     
     anim = som.train(model_data,
                      plot_every=plot_every,
-                     weight_init='linspace',
+                     weight_init=weight_init,
                      all_data_per_iter=False,
                      show_neighborhood=False,
-                     animate=True)
+                     animate=animate)
     print('Done training!')
-    anim.save('/home/jedmond/Desktop/som.mp4', fps=30)
-    print('Made movie!')
+    if animate:
+        writergif = animation.PillowWriter(fps=30)
+        #anim.save('/home/jedmond/Desktop/som.mp4', fps=30)
+        loc =  r"C:\Users\edmon\OneDrive\Desktop\som.gif"
+        anim.save(loc, writer=writergif)
+        print('Made movie!')
     plt.close()
     
     
