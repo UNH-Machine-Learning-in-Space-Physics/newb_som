@@ -33,6 +33,8 @@ def make_mv_gauss(num_gauss    = None,
         means = [ i * np.array([1,1]) for i in range(num_gauss) ]
     if not isinstance(means, list):
         means = [ means ]
+    if isinstance(means[0], tuple):
+        means = [ np.array(elem) for elem in means ]
     if covmats is None:
         covmats = [ (2/(i+2)) * np.identity( means[0].shape[0] )  \
                     for i in range(num_gauss) ]
@@ -439,19 +441,26 @@ if __name__ == "__main__":
     
     
     rng_seed = 1
-    dat, src = make_ugly_dataset(pts_per_dat = 50*1000,
+    dat, src = make_ugly_dataset(pts_per_dat = 5*1000,
                                  seed        = rng_seed,
                                  angle_rot   = 0)
     
+    dat, src = make_moons(n_samples=1000,
+                          noise=0.03)
+    
    
+    dat, src = make_mv_gauss(n_per_gauss=500,
+                             num_gauss = 4,
+                             means = [ (0,0), (10,0), (0,10), (5, 5) ],
+                             single_array=True)
     
-    
+    plot_pca( prep_data(dat, fit='standardize') )
     
     
     
     ## som params
-    som_shape = (20,20)
-    max_iter = 1000
+    som_shape = (10,10)
+    max_iter = 500
     sigma_start = 3.0
     sigma_end = 0.1
     learning_rate_start = 0.1
@@ -459,9 +468,11 @@ if __name__ == "__main__":
     decay_type = 'exponential'
     distance_type = 'euclidean'
     data_fit = 'standardize'
-    plot_every = 100
+    plot_every = 15
     weight_init = 'linspace'
     animate = False
+    grid = 'hit_map'
+    
     
     
     
@@ -489,14 +500,14 @@ if __name__ == "__main__":
                      weight_init=weight_init,
                      all_data_per_iter=False,
                      show_neighborhood=False,
-                     animate=animate)
+                     animate=animate,
+                     grid=grid)
     print('Done training!')
     if animate:
         anim = cam.animate()
         writergif = animation.PillowWriter(fps=30)
-        #anim.save('/home/jedmond/Desktop/som.mp4', fps=30)
-        loc =  r"C:\Users\edmon\OneDrive\Desktop\som.gif"
-        anim.save(loc, writer=writergif)
+        loc =  r"your/movie/path/here"
+        anim.save(loc, writer=writergif, fps=15)
         print('Made movie!')
     plt.close()
     

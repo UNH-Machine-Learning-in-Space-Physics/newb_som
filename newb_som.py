@@ -736,13 +736,9 @@ class newb_som:
             # transform data into eigenspace and find range of data over
             # first two largest principal components
             eig_data = np.matmul(data,evecs.T)
-            plt.close()
-            plt.scatter( *eig_data.T, s=1 )
-            plt.show()
             (p0_min, p0_max), (p1_min, p1_max) = np.vstack([
                                     eig_data.min(axis=0), eig_data.max(axis=0)
                                                           ]).T
-            print( p0_min, p0_max, p1_min, p1_max )
             
             
             # get bounds to space nodes over by transforming data into
@@ -824,13 +820,42 @@ class newb_som:
     
     
     
+    def hit_map(self, data, as_array=None):
+        """
+        Computes the hit-map (how many times are the nodes the BMU)
+        for data given
+        
+        Parameters
+        ----------
+        data: 2d numpy array
+            Data to feed to som
+            
+        Returns
+        -------
+        2d numpy array
+            The row / col indices indicate node position; the value at the
+            index is the number of times said node was the BMU over data
+        """
+        
+        hit_arr = np.zeros( self.som_shape )
+        for row in data:
+            bmu = self.get_BMU(row)
+            hit_arr[bmu] += 1
+            
+        return hit_arr
+        
+    
+    
+    
+    
     def distance_map(self, as_array=None):
         """
         Adds the distances between adjacent nodes and returns this as a dict.
 
         Parameters
         ----------
-        None
+        as_array: bool (default=False)
+            If True, returns average node distances as 2d array
 
         Returns
         -------
@@ -1112,8 +1137,14 @@ class newb_som:
         
     
     
-    def train(self, data, plot_every=None, xy=None, weight_init=None,
-              all_data_per_iter=None, show_neighborhood=None, animate=None):
+    def train(self, data,
+                    plot_every        = None,
+                    xy                = None,
+                    weight_init       = None,
+                    all_data_per_iter = None,
+                    show_neighborhood = None,
+                    animate           = None,
+                    grid              = None):
         """
         Batch-trains SOM using data
         No data shuffling
@@ -1138,11 +1169,20 @@ class newb_som:
         show_neighborhood: bool (default=False)
             Show the neighborhood in the plots if True.
             Will do *nothing* if plot_every is not set
+        grid: str (default='u_matrix')
+            How to display the node grid. Options are 'u_matrix' and 'hit_map'
+        animate: bool (default=False)
+            If True, this function returns a camera (from Python Celluloid
+            package) instance. Can use this to create Matplotlib ArtistAnimation.
 
         Returns
         -------
-        None.
+        None (if animate is False)
+        Camera instance (if animate is True)
         """
+        
+        if grid is None:
+            grid = 'u_matrix'
         
         if all_data_per_iter is None:
             all_data_per_iter = False
@@ -1279,13 +1319,22 @@ class newb_som:
                 
                 
                 # plot u-matrix
-                dist_map = self.distance_map(as_array=True)
-                u_mat_plot = u_mat_ax.pcolor( dist_map.T, cmap='bone_r' )
-                #cax = u_mat_ax.inset_axes([1.04, 0, 0.08, 1.0])
-                #fig.colorbar(u_mat_plot, ax=u_mat_ax, cax=cax,
-                #             boundaries=[0,0.2,0.4,0.6,0.8,1.0])
-                #fig.clim(0,1)
-                u_mat_ax.set_title('U-matrix')
+                if grid == 'u_matrix':
+                    dist_map = self.distance_map(as_array=True)
+                    u_mat_plot = u_mat_ax.pcolor( dist_map.T, cmap='bone_r' )
+                    #cax = u_mat_ax.inset_axes([1.04, 0, 0.08, 1.0])
+                    #fig.colorbar(u_mat_plot, ax=u_mat_ax, cax=cax,
+                    #             boundaries=[0,0.2,0.4,0.6,0.8,1.0])
+                    #fig.clim(0,1)
+                    u_mat_ax.set_title('U-matrix')
+                elif grid == 'hit_map':
+                    hit_map = self.hit_map(data)
+                    hit_plot = u_mat_ax.pcolor( hit_map.T, cmap='bone' )
+                    u_mat_ax.set_title('Hit-map')
+                else:
+                    raise ValueError('grid value (\'' + str(grid)
+                                     + '\') not recognized. Must be '
+                                     + 'u_matrix or hit_map')
                 
                 
                 # set title
