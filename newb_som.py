@@ -352,7 +352,6 @@ class newb_som:
     def __init__(self, som_shape             = None,
                        data_size             = None,
                        max_iter              = None,
-                       n_epoch               = None,
                        sigma_start           = None,
                        sigma_end             = None,
                        learning_rate_start   = None,
@@ -367,7 +366,6 @@ class newb_som:
         self.som_shape = som_shape
         self.data_size = data_size
         self.max_iter = max_iter
-        self.n_epoch = n_epoch
         self.sigma_start = sigma_start
         self.sigma_end = sigma_end
         self.learning_rate_start = learning_rate_start
@@ -446,13 +444,6 @@ class newb_som:
             raise ValueError('max_iter has to be an integer')
             
         
-        ## Determine n_epoch
-        if self.n_epoch is None:
-            self.n_epoch = 1
-        if not newb_som._is_int_type(self.n_epoch):
-            raise ValueError('n_epoch has to be an integer')
-            
-        
         ## Determine sigma start and end
         # sigma start
         if self.sigma_start is None:
@@ -474,7 +465,7 @@ class newb_som:
         ## Determine learning rate start and end
         # learning rate start
         if self.learning_rate_start is None:
-            self.learning_rate_start = 0.5
+            self.learning_rate_start = 0.1
         if not newb_som._is_number_type(self.learning_rate_start):
             raise ValueError('learning_rate_start has to be a number')
         # learning rate end
@@ -704,7 +695,7 @@ class newb_som:
         
         
         if init_type is None:
-            init_type = 'random_uniform'
+            init_type = 'linspace'
             
         data_bounds = None
         if data is None:
@@ -713,32 +704,6 @@ class newb_som:
             data_bounds = np.array( [data.min(), data.max()] ).T
         else: # data is np array
             data_bounds = np.array( [data.min(axis=0), data.max(axis=0)] ).T
-            
-            
-        if init_type == 'random_uniform':
-            weights = []
-            for i in range(self.data_size):
-                _min, _max = data_bounds[i]
-                nodes_per_weight_column = np.prod( som_shape )
-                weights.append( 
-                    _min + (_max - _min) * \
-                            self._random_generator.\
-                                rand( nodes_per_weight_column ).\
-                                    reshape( som_shape )
-                              )
-            #weights = np.vstack(weights)#.reshape( *self.som_shape, len(data_bounds),
-            #                           #         order='F')
-                                        
-            #weights.T[:,i]
-            # frustratingly, I can't just call np.reshape b/c it will mix the
-            # columns up; im sure there is a correct way to use it but I can't
-            # figure it out, so here's a pythonic way of doing it...
-            # Combine the columns-worth of each som_shape-array in weights,
-            # transpose them, and covert into a 3d array
-            weights = np.array(
-                    [ np.vstack( [ weights[0][i], weights[1][i] ] ).T \
-                      for i in range(weights[0].shape[0]) ]
-                              )
                 
         
         if init_type == 'linspace':
@@ -770,7 +735,10 @@ class newb_som:
             
             # transform data into eigenspace and find range of data over
             # first two largest principal components
-            eig_data = np.matmul(data,evecs)
+            eig_data = np.matmul(data,evecs.T)
+            plt.close()
+            plt.scatter( *eig_data.T, s=1 )
+            plt.show()
             (p0_min, p0_max), (p1_min, p1_max) = np.vstack([
                                     eig_data.min(axis=0), eig_data.max(axis=0)
                                                           ]).T
@@ -1017,10 +985,19 @@ class newb_som:
         node_dict = self._make_node_graph()
         
         x_posit, y_posit = [], []
-        for starting_node in node_dict:
-            for ending_node in node_dict[starting_node]:
-                x_posit.append( ( x[starting_node], x[ending_node] ) )
-                y_posit.append( ( y[starting_node], y[ending_node] ) )
+        #for starting_node in node_dict:
+        #    for ending_node in node_dict[starting_node]:
+        #        x_posit.append( ( x[starting_node], x[ending_node] ) )
+        #        y_posit.append( ( y[starting_node], y[ending_node] ) )
+        for _x in self._x:
+            for _y in self._y:
+                start_node = (_x,_y)
+                neighbors = self.get_adjacent_nodes(start_node)
+                for ending_node in neighbors:
+                    ending_node_tuple = tuple(ending_node)
+                    x_posit.append( ( x[start_node], x[ending_node_tuple] ) )
+                    y_posit.append( ( y[start_node], y[ending_node_tuple] ) )
+                    
         
         
         ## finally make plot of nodes ...
@@ -1375,7 +1352,7 @@ class newb_som:
             
         
         if animate:
-            return camera.animate()
+            return camera#.animate()
             
     
     
